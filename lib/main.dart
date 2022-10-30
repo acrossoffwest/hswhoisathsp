@@ -1,28 +1,68 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:ffi';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:http/http.dart' as http;
 import 'package:appwidgetflutter/model/WhoIsAtHsp.dart';
 
-void main() {
+import 'lib/local_notice_service.dart';
+
+final observedUsersController = TextEditingController(text: "");
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await LocalNoticeService().setup();
   HomeWidget.registerBackgroundCallback(backgroundCallback);
   runApp(MyApp());
 }
 
 Future<http.Response> loadCarbonLife() {
-  return http.get(Uri.parse('https://whois.at.hsp.sh/api/now'));
+  return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
+    const Duration(seconds: 3),
+    onTimeout: () {
+      log("Request successful");
+      return http.Response("Request timeout", 504);
+    }
+  );
 }
 
 Future<WhoIsAtHsp> fetchCarbonLife() async {
   final response = await loadCarbonLife();
   if (response.statusCode == 200) {
+    log("Request successful");
     var body = jsonDecode(response.body);
     return WhoIsAtHsp.fromJson(body);
   }
+  log("Request failed");
   throw Exception('Something went wrong!');
+}
+
+void observedUserOnline(String user) {
+  LocalNoticeService().notify(
+    "Online Notifier",
+    "User(s): \"${user}\" is online",
+    "observedUser",
+  );
+}
+
+void checkObservedUserInNewResponse (String observedUsersString, List<String> users) {
+  List<String> observedUsers = observedUsersString.split(",").map((e) => e.trim()).toList();
+  List<String> onlineUsers = [];
+  users.add("test");
+  users.add("test 1");
+  List<String> usersWithLowerCase = users.map((e) => e.toLowerCase()).toList();
+  log(observedUsersString);
+  observedUsers.forEach((user) {
+    if (usersWithLowerCase.contains(user.toLowerCase())) {
+      onlineUsers.add(user);
+    }
+  });
+  if (onlineUsers.isNotEmpty) {
+    observedUserOnline(onlineUsers.join(", "));
+  }
 }
 
 // Called when Doing Background Work initiated from Widget
@@ -31,6 +71,7 @@ Future<void> backgroundCallback(Uri uri) async {
     await HomeWidget.saveWidgetData<bool>('_isLoading', true);
     await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
     final whoIsAtHsp = await fetchCarbonLife();
+    checkObservedUserInNewResponse(observedUsersController.value.text, whoIsAtHsp.users);
     await HomeWidget.saveWidgetData<int>('_counter', whoIsAtHsp.getUsersLength());
     await HomeWidget.saveWidgetData<String>('_carbonLife', whoIsAtHsp.getUsersListAsString());
     await HomeWidget.saveWidgetData<bool>('_isLoading', false);
@@ -83,6 +124,8 @@ class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
   String _carbonLife = "";
   bool _isLoading = false;
+  Timer reloadTimer = null;
+
   @override
   void initState() {
     super.initState();
@@ -105,16 +148,28 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<Void> _refreshData() async {
+    reInitReloader();
     setState(() => {
       _isLoading = true
     });
     final WhoIsAtHsp whoIsAtHsp = await fetchCarbonLife();
+
+    checkObservedUserInNewResponse(observedUsersController.value.text, whoIsAtHsp.users);
+
     setState(() => {
       _counter = whoIsAtHsp.getUsersLength(),
       _carbonLife = whoIsAtHsp.getUsersListAsString(),
       _isLoading = false,
     });
     updateAppWidget();
+  }
+
+  void reInitReloader () {
+    if (reloadTimer != null) {
+      reloadTimer.cancel();
+    }
+    const reloadMinutes = Duration(minutes: 10);
+    reloadTimer = Timer.periodic(reloadMinutes, (Timer t) => print('hi!'));
   }
 
   @override
@@ -175,7 +230,26 @@ class _MyHomePageState extends State<MyHomePage> {
                     textAlign: TextAlign.start,
                   ),
                 ],
-              )
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: observedUsersController,
+                      decoration: const InputDecoration(
+                        border: UnderlineInputBorder(),
+                        labelText: 'Who are you waiting for? (Type users name by comma separated)',
+                        labelStyle: TextStyle(
+                            color: Colors.white
+                        ),
+                      ),
+                      style: TextStyle(
+                          color: Colors.green
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ] : <Widget>[
               Row(
                 children: [
