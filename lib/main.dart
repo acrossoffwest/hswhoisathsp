@@ -32,7 +32,7 @@ onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  const reloadMinutes = Duration(seconds: 5);
+  const reloadMinutes = Duration(minutes: 5);
   Timer.periodic(reloadMinutes, (Timer t) async {
     final users = await updateUsers();
     if (service is AndroidServiceInstance) {
@@ -97,8 +97,8 @@ Future<String> getObservedUsersPref () async {
 }
 
 Future<http.Response> loadCarbonLife() {
-  // return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
-  return http.get(Uri.parse('https://webhooks.aow.space/api/webhook/endpoints/idJo31UQezOAhzic/whoisathsp')).timeout(
+  return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
+  // return http.get(Uri.parse('https://webhooks.aow.space/api/webhook/endpoints/idJo31UQezOAhzic/whoisathsp')).timeout(
     const Duration(seconds: 3),
     onTimeout: () {
       log("Request successful");
