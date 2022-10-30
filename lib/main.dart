@@ -2,25 +2,103 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:ffi';
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:http/http.dart' as http;
 import 'package:appwidgetflutter/model/WhoIsAtHsp.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lib/local_notice_service.dart';
+import 'package:notification_permissions/notification_permissions.dart';
 
-final observedUsersController = TextEditingController(text: "");
+final observedUsersController = TextEditingController(text: "somebody");
+final service = FlutterBackgroundService();
+
+onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+  }
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+
+  const reloadMinutes = Duration(seconds: 5);
+  Timer.periodic(reloadMinutes, (Timer t) async {
+    final users = await updateUsers();
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: "Waiting for: ${await getObservedUsersPref()}",
+        content: "Update ${DateTime.now()}",
+      );
+    }
+    if (checkObservedUserInNewResponse(await getObservedUsersPref(), users)) {
+      log("stop timer");
+      t.cancel();
+      service.stopSelf();
+    }
+    service.invoke(
+      'update',
+      {
+        "current_date": DateTime.now().toIso8601String(),
+      },
+    );
+  });
+}
+
+initializeBackgroundService() async {
+  if (await getObservedUsersPref() == "") {
+    log("There is not observing users");
+    return;
+  }
+  service.invoke("stopService");
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      autoStart: true,
+      isForegroundMode: true,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: true,
+      onForeground: onStart,
+    ),
+  );
+  service.startService();
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LocalNoticeService().setup();
+  await initializeBackgroundService();
   HomeWidget.registerBackgroundCallback(backgroundCallback);
   runApp(MyApp());
 }
 
+Future<SharedPreferences> prefs () async {
+  return await SharedPreferences.getInstance();
+}
+
+Future<bool> saveObservedUsersPref (String observedUsers) async {
+  return await (await prefs()).setString("observedUsers", observedUsers);
+}
+
+Future<String> getObservedUsersPref () async {
+  var res = (await prefs()).getString("observedUsers");
+  return res == null ? "" : res;
+}
+
 Future<http.Response> loadCarbonLife() {
-  return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
+  // return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
+  return http.get(Uri.parse('https://webhooks.aow.space/api/webhook/endpoints/idJo31UQezOAhzic/whoisathsp')).timeout(
     const Duration(seconds: 3),
     onTimeout: () {
       log("Request successful");
@@ -41,6 +119,7 @@ Future<WhoIsAtHsp> fetchCarbonLife() async {
 }
 
 void observedUserOnline(String user) {
+  log("observedUserOnline");
   LocalNoticeService().notify(
     "Online Notifier",
     "User(s): \"${user}\" is online",
@@ -48,11 +127,9 @@ void observedUserOnline(String user) {
   );
 }
 
-void checkObservedUserInNewResponse (String observedUsersString, List<String> users) {
+bool checkObservedUserInNewResponse (String observedUsersString, List<String> users) {
   List<String> observedUsers = observedUsersString.split(",").map((e) => e.trim()).toList();
   List<String> onlineUsers = [];
-  users.add("test");
-  users.add("test 1");
   List<String> usersWithLowerCase = users.map((e) => e.toLowerCase()).toList();
   log(observedUsersString);
   observedUsers.forEach((user) {
@@ -62,21 +139,27 @@ void checkObservedUserInNewResponse (String observedUsersString, List<String> us
   });
   if (onlineUsers.isNotEmpty) {
     observedUserOnline(onlineUsers.join(", "));
+    return true;
   }
+  return false;
 }
 
 // Called when Doing Background Work initiated from Widget
 Future<void> backgroundCallback(Uri uri) async {
   if (uri.host == 'updatecounter') {
-    await HomeWidget.saveWidgetData<bool>('_isLoading', true);
-    await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
-    final whoIsAtHsp = await fetchCarbonLife();
-    checkObservedUserInNewResponse(observedUsersController.value.text, whoIsAtHsp.users);
-    await HomeWidget.saveWidgetData<int>('_counter', whoIsAtHsp.getUsersLength());
-    await HomeWidget.saveWidgetData<String>('_carbonLife', whoIsAtHsp.getUsersListAsString());
-    await HomeWidget.saveWidgetData<bool>('_isLoading', false);
-    await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
+    final users = await updateUsers();
+    checkObservedUserInNewResponse(await getObservedUsersPref(), users);
   }
+}
+Future<List<String>> updateUsers() async {
+  await HomeWidget.saveWidgetData<bool>('_isLoading', true);
+  await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
+  final whoIsAtHsp = await fetchCarbonLife();
+  await HomeWidget.saveWidgetData<int>('_counter', whoIsAtHsp.getUsersLength());
+  await HomeWidget.saveWidgetData<String>('_carbonLife', whoIsAtHsp.getUsersListAsString());
+  await HomeWidget.saveWidgetData<bool>('_isLoading', false);
+  await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
+  return whoIsAtHsp.users;
 }
 
 class MyApp extends StatelessWidget {
@@ -120,17 +203,71 @@ class MyHomePage extends StatefulWidget {
   _MyHomePageState createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   int _counter = 0;
   String _carbonLife = "";
   bool _isLoading = false;
   Timer reloadTimer = null;
 
+  Future<String> permissionStatusFuture;
+
+  var permGranted = "granted";
+  var permDenied = "denied";
+  var permUnknown = "unknown";
+  var permProvisional = "provisional";
+
   @override
   void initState() {
+    getObservedUsersPref().then((value) => observedUsersController.value = TextEditingValue(text: value));
     super.initState();
     HomeWidget.widgetClicked.listen((Uri uri) => loadData());
     loadData(); // This will load data from widget every time app is opened
+    permissionStatusFuture = getCheckNotificationPermStatus();
+    // With this, we will be able to check if the permission is granted or not
+    // when returning to the application
+    WidgetsBinding.instance.addObserver(this);
+    permissionStatusFuture.then((value) => {
+      if (permGranted != value) {
+        NotificationPermissions.requestNotificationPermissions(
+            iosSettings: const NotificationSettingsIos(sound: true, badge: true, alert: true)
+        )
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      setState(() {
+        permissionStatusFuture = getCheckNotificationPermStatus();
+        permissionStatusFuture.then((value) => {
+          if (permGranted != value) {
+            NotificationPermissions.requestNotificationPermissions(
+                iosSettings: const NotificationSettingsIos(sound: true, badge: true, alert: true)
+            )
+          }
+        });
+      });
+    }
+  }
+
+  /// Checks the notification permission status
+  Future<String> getCheckNotificationPermStatus() {
+    return NotificationPermissions.getNotificationPermissionStatus()
+        .then((status) {
+      switch (status) {
+        case PermissionStatus.denied:
+          return permDenied;
+        case PermissionStatus.granted:
+          return permGranted;
+        case PermissionStatus.unknown:
+          return permUnknown;
+        case PermissionStatus.provisional:
+          return permProvisional;
+        default:
+          return null;
+      }
+    });
   }
 
   void loadData() async {
@@ -148,13 +285,13 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<Void> _refreshData() async {
-    reInitReloader();
+    initializeBackgroundService();
     setState(() => {
       _isLoading = true
     });
     final WhoIsAtHsp whoIsAtHsp = await fetchCarbonLife();
 
-    checkObservedUserInNewResponse(observedUsersController.value.text, whoIsAtHsp.users);
+    checkObservedUserInNewResponse(await getObservedUsersPref(), whoIsAtHsp.users);
 
     setState(() => {
       _counter = whoIsAtHsp.getUsersLength(),
@@ -162,14 +299,6 @@ class _MyHomePageState extends State<MyHomePage> {
       _isLoading = false,
     });
     updateAppWidget();
-  }
-
-  void reInitReloader () {
-    if (reloadTimer != null) {
-      reloadTimer.cancel();
-    }
-    const reloadMinutes = Duration(minutes: 10);
-    reloadTimer = Timer.periodic(reloadMinutes, (Timer t) => print('hi!'));
   }
 
   @override
@@ -243,6 +372,9 @@ class _MyHomePageState extends State<MyHomePage> {
                             color: Colors.white
                         ),
                       ),
+                      onChanged: (text) async {
+                        (await prefs()).setString("observedUsers", text);
+                      },
                       style: TextStyle(
                           color: Colors.green
                       ),
@@ -268,7 +400,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: OutlinedButton(
         child: Text(
-          'Refresh',
+          'Save & Refresh',
           style: TextStyle(
               color: Color(0xFFFFFFFF)
           ),
@@ -279,6 +411,126 @@ class _MyHomePageState extends State<MyHomePage> {
         onPressed: _refreshData,
       ), // This trailing comma makes auto-formatting nicer for build methods.
       backgroundColor: Color(0x1c1c1c00),
+    );
+  }
+}
+
+class _MyAppState extends State<MyHomePage> with WidgetsBindingObserver {
+  Future<String> permissionStatusFuture;
+
+  var permGranted = "granted";
+  var permDenied = "denied";
+  var permUnknown = "unknown";
+  var permProvisional = "provisional";
+
+  @override
+  void initState() {
+    super.initState();
+    // set up the notification permissions class
+    // set up the future to fetch the notification data
+    permissionStatusFuture = getCheckNotificationPermStatus();
+    // With this, we will be able to check if the permission is granted or not
+    // when returning to the application
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// When the application has a resumed status, check for the permission
+  /// status
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      setState(() {
+        permissionStatusFuture = getCheckNotificationPermStatus();
+      });
+    }
+  }
+
+  /// Checks the notification permission status
+  Future<String> getCheckNotificationPermStatus() {
+    return NotificationPermissions.getNotificationPermissionStatus()
+        .then((status) {
+      switch (status) {
+        case PermissionStatus.denied:
+          return permDenied;
+        case PermissionStatus.granted:
+          return permGranted;
+        case PermissionStatus.unknown:
+          return permUnknown;
+        case PermissionStatus.provisional:
+          return permProvisional;
+        default:
+          return null;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('Notification Permissions'),
+        ),
+        body: Center(
+            child: Container(
+              margin: EdgeInsets.all(20),
+              child: FutureBuilder(
+                future: permissionStatusFuture,
+                builder: (context, snapshot) {
+                  // if we are waiting for data, show a progress indicator
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return CircularProgressIndicator();
+                  }
+
+                  if (snapshot.hasError) {
+                    return Text('error while retrieving status: ${snapshot.error}');
+                  }
+
+                  if (snapshot.hasData) {
+                    var textWidget = Text(
+                      "The permission status is ${snapshot.data}",
+                      style: TextStyle(fontSize: 20),
+                      softWrap: true,
+                      textAlign: TextAlign.center,
+                    );
+                    // The permission is granted, then just show the text
+                    if (snapshot.data == permGranted) {
+                      return textWidget;
+                    }
+
+                    // else, we'll show a button to ask for the permissions
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        textWidget,
+                        SizedBox(
+                          height: 20,
+                        ),
+                        MaterialButton(
+                          color: Colors.amber,
+                          child: Text("Ask for notification status".toUpperCase()),
+                          onPressed: () {
+                            // show the dialog/open settings screen
+                            NotificationPermissions.requestNotificationPermissions(
+                                iosSettings: const NotificationSettingsIos(
+                                    sound: true, badge: true, alert: true))
+                                .then((_) {
+                              // when finished, check the permission status
+                              setState(() {
+                                permissionStatusFuture =
+                                    getCheckNotificationPermStatus();
+                              });
+                            });
+                          },
+                        )
+                      ],
+                    );
+                  }
+                  return Text("No permission status yet");
+                },
+              ),
+            )),
+      ),
     );
   }
 }
