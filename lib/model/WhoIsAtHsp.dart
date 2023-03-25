@@ -4,9 +4,9 @@ class WhoIsAtHsp {
   final List<String> users;
 
   WhoIsAtHsp({
-    this.headcount,
-    this.unknown_devices,
-    this.users
+    required this.headcount,
+    required this.unknown_devices,
+    required this.users
   });
 
   int getUsersLength() {

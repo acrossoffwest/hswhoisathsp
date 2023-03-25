@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:ffi';
 import 'dart:async';
 import 'dart:ui';
 
@@ -145,8 +144,8 @@ bool checkObservedUserInNewResponse (String observedUsersString, List<String> us
 }
 
 // Called when Doing Background Work initiated from Widget
-Future<void> backgroundCallback(Uri uri) async {
-  if (uri.host == 'updatecounter') {
+Future<void> backgroundCallback(Uri? uri) async {
+  if (uri?.host == 'updatecounter') {
     final users = await updateUsers();
     checkObservedUserInNewResponse(await getObservedUsersPref(), users);
   }
@@ -180,13 +179,13 @@ class MyApp extends StatelessWidget {
         // is not restarted.
         backgroundColor: Colors.black
       ),
-      home: MyHomePage(title: 'HS: Who is at HSP'),
+      home: MyHomePage(title: 'HS: Who is at HSP', key: new Key("home-widget"),),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  MyHomePage({Key key, this.title}) : super(key: key);
+  MyHomePage({required Key key, required this.title}) : super(key: key);
 
   // This widget is the home page of your application. It is stateful, meaning
   // that it has a State object (defined below) that contains fields that affect
@@ -207,9 +206,9 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   int _counter = 0;
   String _carbonLife = "";
   bool _isLoading = false;
-  Timer reloadTimer = null;
+  late Timer reloadTimer;
 
-  Future<String> permissionStatusFuture;
+  late Future<String> permissionStatusFuture;
 
   var permGranted = "granted";
   var permDenied = "denied";
@@ -220,7 +219,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   void initState() {
     getObservedUsersPref().then((value) => observedUsersController.value = TextEditingValue(text: value));
     super.initState();
-    HomeWidget.widgetClicked.listen((Uri uri) => loadData());
+    HomeWidget.widgetClicked.listen((Uri? uri) => loadData());
     loadData(); // This will load data from widget every time app is opened
     permissionStatusFuture = getCheckNotificationPermStatus();
     // With this, we will be able to check if the permission is granted or not
@@ -265,15 +264,15 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         case PermissionStatus.provisional:
           return permProvisional;
         default:
-          return null;
+          return "";
       }
     });
   }
 
   void loadData() async {
-    _counter = await HomeWidget.getWidgetData<int>('_counter', defaultValue: 0);
-    _carbonLife = await HomeWidget.getWidgetData<String>('_carbonLife', defaultValue: "");
-    _isLoading = await HomeWidget.getWidgetData<bool>('_isLoading', defaultValue: false);
+    _counter = (await HomeWidget.getWidgetData<int>('_counter', defaultValue: 0))!;
+    _carbonLife = (await HomeWidget.getWidgetData<String>('_carbonLife', defaultValue: ""))!;
+    _isLoading = (await HomeWidget.getWidgetData<bool>('_isLoading', defaultValue: false))!;
     setState(() {});
   }
 
@@ -284,7 +283,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
   }
 
-  Future<Void> _refreshData() async {
+  Future<void> _refreshData() async {
     initializeBackgroundService();
     setState(() => {
       _isLoading = true
@@ -416,7 +415,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 }
 
 class _MyAppState extends State<MyHomePage> with WidgetsBindingObserver {
-  Future<String> permissionStatusFuture;
+  late Future<String> permissionStatusFuture;
 
   var permGranted = "granted";
   var permDenied = "denied";
@@ -459,7 +458,7 @@ class _MyAppState extends State<MyHomePage> with WidgetsBindingObserver {
         case PermissionStatus.provisional:
           return permProvisional;
         default:
-          return null;
+          return "";
       }
     });
   }
