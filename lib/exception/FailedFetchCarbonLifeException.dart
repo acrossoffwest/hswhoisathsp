@@ -1,0 +1,1 @@
+class FailedFetchCarbonLifeException implements Exception {}

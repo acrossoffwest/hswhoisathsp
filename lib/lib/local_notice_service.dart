@@ -17,7 +17,7 @@ class LocalNoticeService {
     const androidSetting = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSetting = DarwinInitializationSettings();
     const initSettings =
-    InitializationSettings(android: androidSetting, iOS: iosSetting);
+        InitializationSettings(android: androidSetting, iOS: iosSetting);
     await _localNotificationsPlugin.initialize(initSettings).then((_) {
       debugPrint('setupPlugin: setup success');
     }).catchError((Object error) {
@@ -30,10 +30,11 @@ class LocalNoticeService {
       username: 'admin',
       password: 'zarazcipodam1234',
     );
-    mqttClient.updates?.listen((List<MqttReceivedMessage<MqttMessage>> messageList) {
+    mqttClient.updates
+        ?.listen((List<MqttReceivedMessage<MqttMessage>> messageList) {
       final message = messageList[0].payload as MqttPublishMessage;
       final payload =
-      MqttPublishPayload.bytesToStringAsString(message.payload.message);
+          MqttPublishPayload.bytesToStringAsString(message.payload.message);
 
       handleMessage(payload);
     });
@@ -59,9 +60,9 @@ class LocalNoticeService {
         final audioUrl = obj['payload'];
         playAudio(audioUrl);
         break;
-    // case 'stop':
-    //   stopPlaying = true;
-    //   break;
+      // case 'stop':
+      //   stopPlaying = true;
+      //   break;
       default:
         print('Unknown command received');
     }
@@ -71,7 +72,7 @@ class LocalNoticeService {
     FlutterTts flutterTts = FlutterTts();
 
     List<String> sentences =
-    splitToSentences(sayPayload['query'], 100, sayPayload['language']);
+        splitToSentences(sayPayload['query'], 100, sayPayload['language']);
 
     await flutterTts.setLanguage(sayPayload['language']);
 
@@ -156,9 +157,9 @@ class LocalNoticeService {
   }
 
   Future<void> subscribeToTopic(
-      MqttServerClient mqttClient,
-      String topic,
-      ) async {
+    MqttServerClient mqttClient,
+    String topic,
+  ) async {
     mqttClient.subscribe(topic, MqttQos.atLeastOnce);
     print('Subscribed to topic: $topic');
   }
@@ -168,11 +169,11 @@ class LocalNoticeService {
     return 'mqtt_subscriber_${random.nextInt(10000)}';
   }
 
-  void notify (String title, String body, String channel) async {
+  void notify(String title, String body, String channel) async {
     final androidDetail = AndroidNotificationDetails(
         channel, // channel Id
-        channel  // channel Name
-    );
+        channel // channel Name
+        );
     final iosDetail = DarwinNotificationDetails();
 
     final noticeDetail = NotificationDetails(

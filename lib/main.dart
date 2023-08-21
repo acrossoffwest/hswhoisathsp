@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:appwidgetflutter/exception/FailedFetchCarbonLifeException.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
@@ -82,28 +83,26 @@ void main() async {
   runApp(MyApp());
 }
 
-Future<SharedPreferences> prefs () async {
+Future<SharedPreferences> prefs() async {
   return await SharedPreferences.getInstance();
 }
 
-Future<bool> saveObservedUsersPref (String observedUsers) async {
+Future<bool> saveObservedUsersPref(String observedUsers) async {
   return await (await prefs()).setString("observedUsers", observedUsers);
 }
 
-Future<String> getObservedUsersPref () async {
+Future<String> getObservedUsersPref() async {
   var res = (await prefs()).getString("observedUsers");
   return res == null ? "" : res;
 }
 
 Future<http.Response> loadCarbonLife() {
   return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
-  // return http.get(Uri.parse('https://webhooks.aow.space/api/webhook/endpoints/idJo31UQezOAhzic/whoisathsp')).timeout(
-    const Duration(seconds: 3),
-    onTimeout: () {
-      log("Request successful");
-      return http.Response("Request timeout", 504);
-    }
-  );
+      // return http.get(Uri.parse('https://webhooks.aow.space/api/webhook/endpoints/idJo31UQezOAhzic/whoisathsp')).timeout(
+      const Duration(seconds: 3), onTimeout: () {
+    log("Request successful");
+    return http.Response("Request timeout", 504);
+  });
 }
 
 Future<WhoIsAtHsp> fetchCarbonLife() async {
@@ -114,7 +113,7 @@ Future<WhoIsAtHsp> fetchCarbonLife() async {
     return WhoIsAtHsp.fromJson(body);
   }
   log("Request failed");
-  throw Exception('Something went wrong!');
+  throw FailedFetchCarbonLifeException();
 }
 
 void observedUserOnline(String user) {
@@ -126,8 +125,10 @@ void observedUserOnline(String user) {
   );
 }
 
-bool checkObservedUserInNewResponse (String observedUsersString, List<String> users) {
-  List<String> observedUsers = observedUsersString.split(",").map((e) => e.trim()).toList();
+bool checkObservedUserInNewResponse(
+    String observedUsersString, List<String> users) {
+  List<String> observedUsers =
+      observedUsersString.split(",").map((e) => e.trim()).toList();
   List<String> onlineUsers = [];
   List<String> usersWithLowerCase = users.map((e) => e.toLowerCase()).toList();
   log(observedUsersString);
@@ -150,15 +151,24 @@ Future<void> backgroundCallback(Uri? uri) async {
     checkObservedUserInNewResponse(await getObservedUsersPref(), users);
   }
 }
+
 Future<List<String>> updateUsers() async {
   await HomeWidget.saveWidgetData<bool>('_isLoading', true);
-  await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
-  final whoIsAtHsp = await fetchCarbonLife();
-  await HomeWidget.saveWidgetData<int>('_counter', whoIsAtHsp.getUsersLength());
-  await HomeWidget.saveWidgetData<String>('_carbonLife', whoIsAtHsp.getUsersListAsString());
-  await HomeWidget.saveWidgetData<bool>('_isLoading', false);
-  await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
-  return whoIsAtHsp.users;
+  await HomeWidget.updateWidget(
+      name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
+  try {
+    final whoIsAtHsp = await fetchCarbonLife();
+    await HomeWidget.saveWidgetData<int>(
+        '_counter', whoIsAtHsp.getUsersLength());
+    await HomeWidget.saveWidgetData<String>(
+        '_carbonLife', whoIsAtHsp.getUsersListAsString());
+    await HomeWidget.saveWidgetData<bool>('_isLoading', false);
+    await HomeWidget.updateWidget(
+        name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
+    return whoIsAtHsp.users;
+  } on FailedFetchCarbonLifeException {
+    return [];
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -168,18 +178,20 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'HS: Who is at HSP',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        backgroundColor: Colors.black
+          // This is the theme of your application.
+          //
+          // Try running your application with "flutter run". You'll see the
+          // application has a blue toolbar. Then, without quitting the app, try
+          // changing the primarySwatch below to Colors.green and then invoke
+          // "hot reload" (press "r" in the console where you ran "flutter run",
+          // or simply save your changes to "hot reload" in a Flutter IDE).
+          // Notice that the counter didn't reset back to zero; the application
+          // is not restarted.
+          backgroundColor: Colors.black),
+      home: MyHomePage(
+        title: 'HS: Who is at HSP',
+        key: new Key("home-widget"),
       ),
-      home: MyHomePage(title: 'HS: Who is at HSP', key: new Key("home-widget"),),
     );
   }
 }
@@ -217,7 +229,8 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
   @override
   void initState() {
-    getObservedUsersPref().then((value) => observedUsersController.value = TextEditingValue(text: value));
+    getObservedUsersPref().then((value) =>
+        observedUsersController.value = TextEditingValue(text: value));
     super.initState();
     HomeWidget.widgetClicked.listen((Uri? uri) => loadData());
     loadData(); // This will load data from widget every time app is opened
@@ -226,12 +239,13 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     // when returning to the application
     WidgetsBinding.instance.addObserver(this);
     permissionStatusFuture.then((value) => {
-      if (permGranted != value) {
-        NotificationPermissions.requestNotificationPermissions(
-            iosSettings: const NotificationSettingsIos(sound: true, badge: true, alert: true)
-        )
-      }
-    });
+          if (permGranted != value)
+            {
+              NotificationPermissions.requestNotificationPermissions(
+                  iosSettings: const NotificationSettingsIos(
+                      sound: true, badge: true, alert: true))
+            }
+        });
   }
 
   @override
@@ -240,12 +254,13 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
       setState(() {
         permissionStatusFuture = getCheckNotificationPermStatus();
         permissionStatusFuture.then((value) => {
-          if (permGranted != value) {
-            NotificationPermissions.requestNotificationPermissions(
-                iosSettings: const NotificationSettingsIos(sound: true, badge: true, alert: true)
-            )
-          }
-        });
+              if (permGranted != value)
+                {
+                  NotificationPermissions.requestNotificationPermissions(
+                      iosSettings: const NotificationSettingsIos(
+                          sound: true, badge: true, alert: true))
+                }
+            });
       });
     }
   }
@@ -270,9 +285,12 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   }
 
   void loadData() async {
-    _counter = (await HomeWidget.getWidgetData<int>('_counter', defaultValue: 0))!;
-    _carbonLife = (await HomeWidget.getWidgetData<String>('_carbonLife', defaultValue: ""))!;
-    _isLoading = (await HomeWidget.getWidgetData<bool>('_isLoading', defaultValue: false))!;
+    _counter =
+        (await HomeWidget.getWidgetData<int>('_counter', defaultValue: 0))!;
+    _carbonLife = (await HomeWidget.getWidgetData<String>('_carbonLife',
+        defaultValue: ""))!;
+    _isLoading = (await HomeWidget.getWidgetData<bool>('_isLoading',
+        defaultValue: false))!;
     setState(() {});
   }
 
@@ -280,23 +298,23 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     await HomeWidget.saveWidgetData<bool>('_isLoading', _isLoading);
     await HomeWidget.saveWidgetData<int>('_counter', _counter);
     await HomeWidget.saveWidgetData<String>('_carbonLife', _carbonLife);
-    await HomeWidget.updateWidget(name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
+    await HomeWidget.updateWidget(
+        name: 'AppWidgetProvider', iOSName: 'AppWidgetProvider');
   }
 
   Future<void> _refreshData() async {
     initializeBackgroundService();
-    setState(() => {
-      _isLoading = true
-    });
+    setState(() => {_isLoading = true});
     final WhoIsAtHsp whoIsAtHsp = await fetchCarbonLife();
 
-    checkObservedUserInNewResponse(await getObservedUsersPref(), whoIsAtHsp.users);
+    checkObservedUserInNewResponse(
+        await getObservedUsersPref(), whoIsAtHsp.users);
 
     setState(() => {
-      _counter = whoIsAtHsp.getUsersLength(),
-      _carbonLife = whoIsAtHsp.getUsersListAsString(),
-      _isLoading = false,
-    });
+          _counter = whoIsAtHsp.getUsersLength(),
+          _carbonLife = whoIsAtHsp.getUsersListAsString(),
+          _isLoading = false,
+        });
     updateAppWidget();
   }
 
@@ -336,73 +354,61 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
             // axis because Columns are vertical (the cross axis would be
             // horizontal).
             mainAxisAlignment: MainAxisAlignment.start,
-            children: !_isLoading ? <Widget>[
-              Row(
-                children: [
-                  Text(
-                      'There are $_counter carbon-based lifeforms in HS according to our measurements.',
-                      style: TextStyle(
-                          color: Colors.white
-                      ),
-                      textAlign: TextAlign.start
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Text(
-                    '$_carbonLife',
-                    style: TextStyle(
-                        color: Colors.white
+            children: !_isLoading
+                ? <Widget>[
+                    Row(
+                      children: [
+                        Text(
+                            'There are $_counter carbon-based lifeforms in HS according to our measurements.',
+                            style: TextStyle(color: Colors.white),
+                            textAlign: TextAlign.start),
+                      ],
                     ),
-                    textAlign: TextAlign.start,
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: observedUsersController,
-                      decoration: const InputDecoration(
-                        border: UnderlineInputBorder(),
-                        labelText: 'Who are you waiting for? (Type users name by comma separated)',
-                        labelStyle: TextStyle(
-                            color: Colors.white
+                    Row(
+                      children: [
+                        Text(
+                          '$_carbonLife',
+                          style: TextStyle(color: Colors.white),
+                          textAlign: TextAlign.start,
                         ),
-                      ),
-                      onChanged: (text) async {
-                        (await prefs()).setString("observedUsers", text);
-                      },
-                      style: TextStyle(
-                          color: Colors.green
-                      ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ] : <Widget>[
-              Row(
-                children: [
-                  Text(
-                      'Loading...',
-                      style: TextStyle(
-                          color: Colors.white
-                      ),
-                      textAlign: TextAlign.start
-                  ),
-                ],
-              ),
-            ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: observedUsersController,
+                            decoration: const InputDecoration(
+                              border: UnderlineInputBorder(),
+                              labelText:
+                                  'Who are you waiting for? (Type users name by comma separated)',
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                            onChanged: (text) async {
+                              (await prefs()).setString("observedUsers", text);
+                            },
+                            style: TextStyle(color: Colors.green),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ]
+                : <Widget>[
+                    Row(
+                      children: [
+                        Text('Loading...',
+                            style: TextStyle(color: Colors.white),
+                            textAlign: TextAlign.start),
+                      ],
+                    ),
+                  ],
           ),
         ),
       ),
       floatingActionButton: OutlinedButton(
         child: Text(
           'Save & Refresh',
-          style: TextStyle(
-              color: Color(0xFFFFFFFF)
-          ),
+          style: TextStyle(color: Color(0xFFFFFFFF)),
         ),
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: Colors.white),
@@ -472,63 +478,63 @@ class _MyAppState extends State<MyHomePage> with WidgetsBindingObserver {
         ),
         body: Center(
             child: Container(
-              margin: EdgeInsets.all(20),
-              child: FutureBuilder(
-                future: permissionStatusFuture,
-                builder: (context, snapshot) {
-                  // if we are waiting for data, show a progress indicator
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return CircularProgressIndicator();
-                  }
+          margin: EdgeInsets.all(20),
+          child: FutureBuilder(
+            future: permissionStatusFuture,
+            builder: (context, snapshot) {
+              // if we are waiting for data, show a progress indicator
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return CircularProgressIndicator();
+              }
 
-                  if (snapshot.hasError) {
-                    return Text('error while retrieving status: ${snapshot.error}');
-                  }
+              if (snapshot.hasError) {
+                return Text('error while retrieving status: ${snapshot.error}');
+              }
 
-                  if (snapshot.hasData) {
-                    var textWidget = Text(
-                      "The permission status is ${snapshot.data}",
-                      style: TextStyle(fontSize: 20),
-                      softWrap: true,
-                      textAlign: TextAlign.center,
-                    );
-                    // The permission is granted, then just show the text
-                    if (snapshot.data == permGranted) {
-                      return textWidget;
-                    }
+              if (snapshot.hasData) {
+                var textWidget = Text(
+                  "The permission status is ${snapshot.data}",
+                  style: TextStyle(fontSize: 20),
+                  softWrap: true,
+                  textAlign: TextAlign.center,
+                );
+                // The permission is granted, then just show the text
+                if (snapshot.data == permGranted) {
+                  return textWidget;
+                }
 
-                    // else, we'll show a button to ask for the permissions
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        textWidget,
-                        SizedBox(
-                          height: 20,
-                        ),
-                        MaterialButton(
-                          color: Colors.amber,
-                          child: Text("Ask for notification status".toUpperCase()),
-                          onPressed: () {
-                            // show the dialog/open settings screen
-                            NotificationPermissions.requestNotificationPermissions(
+                // else, we'll show a button to ask for the permissions
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    textWidget,
+                    SizedBox(
+                      height: 20,
+                    ),
+                    MaterialButton(
+                      color: Colors.amber,
+                      child: Text("Ask for notification status".toUpperCase()),
+                      onPressed: () {
+                        // show the dialog/open settings screen
+                        NotificationPermissions.requestNotificationPermissions(
                                 iosSettings: const NotificationSettingsIos(
                                     sound: true, badge: true, alert: true))
-                                .then((_) {
-                              // when finished, check the permission status
-                              setState(() {
-                                permissionStatusFuture =
-                                    getCheckNotificationPermStatus();
-                              });
-                            });
-                          },
-                        )
-                      ],
-                    );
-                  }
-                  return Text("No permission status yet");
-                },
-              ),
-            )),
+                            .then((_) {
+                          // when finished, check the permission status
+                          setState(() {
+                            permissionStatusFuture =
+                                getCheckNotificationPermStatus();
+                          });
+                        });
+                      },
+                    )
+                  ],
+                );
+              }
+              return Text("No permission status yet");
+            },
+          ),
+        )),
       ),
     );
   }
