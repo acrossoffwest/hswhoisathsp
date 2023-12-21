@@ -4,6 +4,10 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:appwidgetflutter/exception/FailedFetchCarbonLifeException.dart';
+import 'package:appwidgetflutter/storage/CringeCastStorage.dart';
+import 'package:appwidgetflutter/storage/NicknameStorage.dart';
+import 'package:appwidgetflutter/storage/Storage.dart';
+import 'package:appwidgetflutter/storage/WaiterStorage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
@@ -16,7 +20,11 @@ import 'lib/local_notice_service.dart';
 import 'package:notification_permissions/notification_permissions.dart';
 
 final observedUsersController = TextEditingController(text: "somebody");
+final nicknameController = TextEditingController(text: "");
 final service = FlutterBackgroundService();
+
+late SharedPreferences sharedPreferences;
+late Storage storage;
 
 onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -56,11 +64,17 @@ onStart(ServiceInstance service) async {
 }
 
 initializeBackgroundService() async {
+  if (!await storage.waiter.isActivated()) {
+    log("Waiter deactivated");
+    return;
+  }
   if (await getObservedUsersPref() == "") {
     log("There is not observing users");
     return;
   }
-  service.invoke("stopService");
+  if (await service.isRunning()) {
+    service.invoke("stopService");
+  }
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
@@ -75,34 +89,39 @@ initializeBackgroundService() async {
   service.startService();
 }
 
+Future<SharedPreferences> prefs() async {
+  return await SharedPreferences.getInstance();
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  sharedPreferences = await prefs();
+
+  storage = new Storage(sharedPreferences);
+
   await LocalNoticeService().setup();
   await initializeBackgroundService();
   HomeWidget.registerBackgroundCallback(backgroundCallback);
   runApp(MyApp());
 }
 
-Future<SharedPreferences> prefs() async {
-  return await SharedPreferences.getInstance();
-}
-
 Future<bool> saveObservedUsersPref(String observedUsers) async {
-  return await (await prefs()).setString("observedUsers", observedUsers);
+  return await sharedPreferences.setString("observedUsers", observedUsers);
 }
 
 Future<String> getObservedUsersPref() async {
-  var res = (await prefs()).getString("observedUsers");
+  var res = sharedPreferences.getString("observedUsers");
   return res == null ? "" : res;
 }
 
 Future<http.Response> loadCarbonLife() {
   return http.get(Uri.parse('https://whois.at.hsp.sh/api/now')).timeout(
-      // return http.get(Uri.parse('https://webhooks.aow.space/api/webhook/endpoints/idJo31UQezOAhzic/whoisathsp')).timeout(
-      const Duration(seconds: 3), onTimeout: () {
-    log("Request successful");
-    return http.Response("Request timeout", 504);
-  });
+    const Duration(seconds: 3), onTimeout: () {
+      log("Request successful");
+      return http.Response("Request timeout", 504);
+    }
+  );
 }
 
 Future<WhoIsAtHsp> fetchCarbonLife() async {
@@ -218,6 +237,8 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   int _counter = 0;
   String _carbonLife = "";
   bool _isLoading = false;
+  bool _isWaiterActivated = false;
+  bool _isCringeCastActivated = false;
   late Timer reloadTimer;
 
   late Future<String> permissionStatusFuture;
@@ -231,6 +252,11 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   void initState() {
     getObservedUsersPref().then((value) =>
         observedUsersController.value = TextEditingValue(text: value));
+
+    storage.waiter.isActivated().then((value) => _isWaiterActivated = value!);
+    storage.cringeCast.isActivated().then((value) => _isCringeCastActivated = value!);
+    storage.nickname.get().then((value) => nicknameController.value = TextEditingValue(text: value!));
+
     super.initState();
     HomeWidget.widgetClicked.listen((Uri? uri) => loadData());
     loadData(); // This will load data from widget every time app is opened
@@ -373,6 +399,41 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
+                    Divider(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: CheckboxListTile(
+                            title: Text("Activate CRINGECAST.NET"),
+                            value: _isCringeCastActivated,
+                            onChanged: (newValue) async {
+                              storage.cringeCast.setIsActivated(newValue!);
+                              setState(() {
+                                _isCringeCastActivated = newValue;
+                              });
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,  //  <-- leading Checkbox
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: CheckboxListTile(
+                            title: Text("Wait for somebody or set specific person's nickname"),
+                            value: _isWaiterActivated,
+                            onChanged: (newValue) async {
+                              storage.waiter.setIsActivated(newValue!);
+                              setState(() {
+                                _isWaiterActivated = newValue;
+                              });
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,  //  <-- leading Checkbox
+                          ),
+                        ),
+                      ],
+                    ),
                     Row(
                       children: [
                         Expanded(
@@ -385,9 +446,28 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                               labelStyle: TextStyle(color: Colors.white),
                             ),
                             onChanged: (text) async {
-                              (await prefs()).setString("observedUsers", text);
+                              await saveObservedUsersPref(text);
                             },
                             style: TextStyle(color: Colors.green),
+                          ),
+                        ),
+                      ].where((element) => _isWaiterActivated).toList(),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: nicknameController,
+                            decoration: const InputDecoration(
+                              border: UnderlineInputBorder(),
+                              labelText:
+                              'Your nickname',
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                            onChanged: (text) async {
+                              await storage.nickname.set(text);
+                            },
+                            style: TextStyle(color: Colors.blueAccent),
                           ),
                         ),
                       ],

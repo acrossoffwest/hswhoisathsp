@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:appwidgetflutter/main.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -42,7 +43,7 @@ class LocalNoticeService {
     subscribeToTopic(mqttClient, 'cringecast');
   }
 
-  void handleMessage(String payload) {
+  void handleMessage(String payload) async {
     Map<String, dynamic> obj;
     try {
       obj = jsonDecode(payload);
@@ -50,21 +51,24 @@ class LocalNoticeService {
       print('Error decoding JSON: $e');
       return;
     }
-
-    switch (obj['command']) {
-      case 'say':
-        final sayPayload = jsonDecode(obj['payload']);
-        say(sayPayload);
-        break;
-      case 'play':
-        final audioUrl = obj['payload'];
-        playAudio(audioUrl);
-        break;
+    bool? isCringeCastActivated = await storage.cringeCast.isActivated();
+    print("New message with command: " + obj['command']);
+    if (isCringeCastActivated!) {
+      switch (obj['command']) {
+        case 'say':
+          final sayPayload = jsonDecode(obj['payload']);
+          say(sayPayload);
+          break;
+        case 'play':
+          final audioUrl = obj['payload'];
+          playAudio(audioUrl);
+          break;
       // case 'stop':
       //   stopPlaying = true;
       //   break;
-      default:
-        print('Unknown command received');
+        default:
+          print('Unknown command received');
+      }
     }
   }
 
