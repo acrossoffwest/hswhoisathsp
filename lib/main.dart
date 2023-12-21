@@ -4,10 +4,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:appwidgetflutter/exception/FailedFetchCarbonLifeException.dart';
-import 'package:appwidgetflutter/storage/CringeCastStorage.dart';
-import 'package:appwidgetflutter/storage/NicknameStorage.dart';
 import 'package:appwidgetflutter/storage/Storage.dart';
-import 'package:appwidgetflutter/storage/WaiterStorage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
@@ -394,6 +391,15 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                       children: [
                         Text(
                           '$_carbonLife',
+                          style: TextStyle(color: Colors.white),
+                          textAlign: TextAlign.start,
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          'Updated at: ${DateTime.now().toLocal()}',
                           style: TextStyle(color: Colors.white),
                           textAlign: TextAlign.start,
                         ),

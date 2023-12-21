@@ -8,6 +8,8 @@ import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetBackgroundIntent
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 
 class AppWidgetProvider : HomeWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray, widgetData: SharedPreferences) {
@@ -19,7 +21,9 @@ class AppWidgetProvider : HomeWidgetProvider() {
                 val isLoading = widgetData.getBoolean("_isLoading", false)
                 val counter = widgetData.getInt("_counter", 0)
                 val carbonLife = widgetData.getString("_carbonLife", "")
-                var counterText = "There are $counter carbon-based lifeforms in HS according to our measurements.\n$carbonLife"
+                val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                val current = LocalDateTime.now().format(formatter)
+                var counterText = "There are $counter carbon-based lifeforms in HS according to our measurements.\n$carbonLife\nUpdated at: $current"
                 if (isLoading) {
                     counterText = "Loading..."
                 }
